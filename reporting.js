@@ -55,19 +55,12 @@ function checkMasterReport() {
 //slack response comments
 var cheekyResponseComments = new Array("That comment was added.",
                                        "Pushed it onto the stack.", 
-                                       "And another comment is in there.", 
                                        "You got it.  Done.", 
-                                       "You aren't just making this up, are you?", 
-                                       "Done.  You get what you measure.",
-                                       "Impressive. :-/",
-                                       "I can't believe it's not butter",
-                                       "Threw that shrimp on the barbie",
-                                       "Do you think there is a special void in space where these comments go?",
-                                       "That update right there will stop the presses.",
-                                       "Welp, Allstar Comment!!!",
                                        "Good job.  You can take a vacation now.",
                                        "I've seen better comments from Twitter trolls.",
                                        "Look the other way...I just wrote that to dev -> null" );
+
+
 
 function doPost(e){
   try{
@@ -81,9 +74,12 @@ function doPost(e){
       console.log(error)
       }
   
-    numComments = acceptSlackMessage(e);
-    
-    if(numComments == 0) {
+    //numComments = acceptSlackMessage(e);
+    SlackResponse = acceptSlackMessage(e);
+  
+  return ContentService.createTextOutput(SlackResponse);
+  
+/*    if(numComments == 0) {
       return ContentService.createTextOutput("Added that for you.  That is the first comment this week.");
     }
     else {
@@ -92,7 +88,7 @@ function doPost(e){
       return ContentService.createTextOutput(cheekyResponse);
   
     }
-
+*/
 }
 
 function acceptSlackMessage(messagedata){
@@ -108,22 +104,38 @@ function acceptSlackMessage(messagedata){
     var currentValue = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheet).getRange(5,3).getValue();
     currentValue += incrementnumber;
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheet).getRange(5,3).setValue(currentValue);
+    return "Added that Onboarding data for you.";
   }
   
   //if it isn't an onboarding, it's comments
   if (sheet.indexOf("Comments") >=0) {
-  var testSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheet);
-  lastRow = testSheet.getLastRow();
-
-  //post the specific text directly to the sheet  
-  testSheet.getRange(lastRow+1, 1).setValue(msgbits[1]);    
+    var testSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheet);
+    lastRow = testSheet.getLastRow();
+    if(msgbits[1].indexOf("ShowComms") >= 0) {
+      //this is a request to see the comments
+      var returnMessage = "";
+      var sheetComments = testSheet.getRange(1,1,lastRow).getValues();
+      
+      for (i=0; i<lastRow; i++){
+        returnMessage = returnMessage + sheetComments[i][0] + "\n";
+         }
+        return returnMessage; 
+    }
+    else {
+      //post the specific text directly to the sheet  
+      testSheet.getRange(lastRow+1, 1).setValue(msgbits[1]);
+      return (lastRow+1) + " comments now in the sheet.";
+    }
   }
+    
+  
     if (sheet.indexOf("Action") >=0) {
    //this is an instruction to perform an action
    //for now the only action is publish report so we'll just call main.
     //if I come up with more actions to perform I'll need to parse msgbits[1] to know what to do
       
     mainLoop();
+      return "Ran the reporting for you.";
   }
   
   //else this is something unknown, just ignore for now
@@ -131,13 +143,49 @@ function acceptSlackMessage(messagedata){
 }
   
   
+function slackInteraction(payload) {
+  //this is a slack interaction that we can respond to
+  //primary interactions are to publish the report
+  //can be extended in the future
+  
+  try{
+    payloadProcess = JSON.parse(payload.postData.contents)
+    if(postMessage.type == "message"){
+      //this is a dm message to the reportbot; split it so we can parse
+      var messageBits = payloadProcess.split(" ");
+      //look for both "publish" and "report" in the message
+      var first = FALSE;
+      var second = FALSE;
+      for(i=0; i<messsageBits.length; i++){
+        if(messageBits[i]=="publish"){
+          first=TRUE;
+        }
+        else if(messageBits[i]=="report"){
+          second=TRUE;
+        }
+      
+      }
+      if (first && second) {
+        //submit the report
+        mainLoop();
+        return ContentService.createTextOutput("I submitted that shit for you.");
+      }
+    }
+  }
+  catch(error){
+    return ContentService.createTextOutput("Sorry, I ran into trouble.  Figures, Gabe wrote the code.");
+  }
+  
+  
+
+}
 //END OF SLACK INTERACTION SECTION
 
 function getMyReports() {
   //a fragile, hacky way to get my report data from my email
   //the really good way would be to access the reports directly from SFDC
   
-  var stagingSheets = new Array("ThisQtr", "NextQtr", "TotalQtr", "OppCount", "POCData", "Comments");
+  var stagingSheets = new Array("ThisQtr", "NextQtr", "TotalQtr", "OppCount", "POCData", "Comments", "Obstacles");
   
   var label = GmailApp.getUserLabelByName("SfdcReport");
   //get the threads in the report inbox - there should never be more than what we need -  which is to say this is a likely spot for a bug becuase it assumes the content with the label is pristine
@@ -157,6 +205,7 @@ function getMyReports() {
     if(reportSubject.indexOf("this week, close this qtr") >=0) { reportSheet = stagingSheets[0] };
     if(reportSubject.indexOf("ths week, future qtrs") >=0) { reportSheet = stagingSheets[1] };
     if(reportSubject.indexOf("All Opps with SA Actions") >=0) { reportSheet = stagingSheets[3] };
+    if(reportSubject.indexOf("Tech Obstacles") >=0) { reportSheet = stagingSheets[6] };
     if(reportSubject.indexOf("POC actions") >=0) {reportSheet = stagingSheets[4] };
     if(reportSubject.indexOf("Onboarding") >=0) {
       var currentValue = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(3,3).getValue();
@@ -165,7 +214,7 @@ function getMyReports() {
     } //and then just write out whatever to Garbage
       
     var theSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(reportSheet);  
-    var a=2;
+    var a=theSheet.getLastRow() + 2;
     for (i=0; i<lineArray.length; i++){
       
       if(lineArray[i].toString()) { //linArray val is not empty
@@ -190,7 +239,8 @@ function getMyReports() {
     var sheetList = new Array( SpreadsheetApp.getActiveSpreadsheet().getSheetByName("ThisQtr"),
                                SpreadsheetApp.getActiveSpreadsheet().getSheetByName("NextQtr"),
                                SpreadsheetApp.getActiveSpreadsheet().getSheetByName("TotalQtr"),
-                               SpreadsheetApp.getActiveSpreadsheet().getSheetByName("POCData"));
+                               SpreadsheetApp.getActiveSpreadsheet().getSheetByName("POCData"),
+                               SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Obstacles"));
     
     //process actions in this quarter
     for(var i=10; i<=sheetList[0].getLastRow(); i++){
@@ -218,8 +268,8 @@ function getMyReports() {
       //iterate over each row in the sheet, find "Grand Total" and process the next two
       if(sheetList[1].getRange(i, 1).getValue().toString().indexOf("Grand Total") >=0 ) {
         //get the next two values yo
-        americas = sheetList[0].getRange(i+1, 1).getValue();
-        international = sheetList[0].getRange(i+2, 1).getValue();
+        americas = sheetList[1].getRange(i+1, 1).getValue();
+        international = sheetList[1].getRange(i+2, 1).getValue();
       }
     //push those numbers into the anchor sheet
       anchorSheet.getRange(13,4).setValue(americas);
@@ -302,7 +352,15 @@ function getMyReports() {
         start+=2;
         continue;
       }
-     }    
+      if(sheetList[2].getRange(start, 1).getValue().toString().indexOf("09. Conclusion Conversations") >=0 ) {
+        
+        anchorSheet.getRange(25,4).setValue(sheetList[2].getRange(start+1, 1).getValue());
+        anchorSheet.getRange(25,5).setValue(sheetList[2].getRange(start+2, 1).getValue());
+        start+=2;
+        continue;
+      }
+
+  }    
 
     //poc data
     for(var i=10; i<=sheetList[3].getLastRow(); i++){
@@ -370,10 +428,121 @@ function getMyReports() {
       SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(4,3).setValue(newActive);
       var lastQtrClosed = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Master").getRange(12,2).getValue();
       SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(6,3).setValue(lastQtrClosed + currentClosed);
+      //SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(7,3).setValue(SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(7,3).getValue()-2);
+
     
       //copy this over to the anchorsheet
-      anchorSheet.getRange(32,3,4).setValues(SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(3,3,4).getValues());
+      anchorSheet.getRange(33,3,5).setValues(SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(3,3,5).getValues());
  
+    
+    //take care of Tech Obstacles
+    //sheetList[4]
+    //Anchor table looks like:
+    //
+    //   [E33]                 Count  Revenue Impact
+    //Added this week:    
+    //Q open deal blockers:   
+    //Q all open requests:    
+    //Open Deal Blockers:   
+    //All Open Requests:    
+ 
+    //process content between header and Grand Total
+    //all content for tech obstacles is in the same Obstacles sheet
+    //each email section title == Report title, how to find the right content per section.  Just need "Grand Total" count and revenue
+    
+    //currently this is very hacky way of getting this done and could be more elegant single pass through the sheet 
+    
+    //Tech Obstacles - All Open Requests
+    for (var i=1; i <= sheetList[4].getLastRow(); i++) {
+        var signal = 0;
+        if(sheetList[4].getRange(i, 1).getValue().toString().indexOf("Tech Obstacles - All Open Requests") >=0 ) {
+          for (var subindex=i+1; subindex <= sheetList[4].getLastRow(); subindex++) {
+            if(sheetList[4].getRange(subindex, 1).getValue().toString().indexOf("Grand Total") >=0 ) {
+              var valuestring = sheetList[4].getRange(subindex, 1).getValue()
+              anchorSheet.getRange(38,6).setValue(valuestring.replace(/\D/g,''));
+              anchorSheet.getRange(38,7).setValue(sheetList[4].getRange(subindex+1, 1).getValue());
+              signal = 1;
+              break;
+              }
+          }
+          if (signal == 1) { break; }  
+        }
+    }
+
+    //Tech Obstacles - All Deal Breakers
+    for (var i=1; i <= sheetList[4].getLastRow(); i++) {
+        var signal = 0;
+        if(sheetList[4].getRange(i, 1).getValue().toString().indexOf("Tech Obstacles - All Deal Breakers") >=0 ) {
+          for (var subindex=i+1; subindex <= sheetList[4].getLastRow(); subindex++) {
+            if(sheetList[4].getRange(subindex, 1).getValue().toString().indexOf("Grand Total") >=0 ) {
+              var valuestring = sheetList[4].getRange(subindex, 1).getValue()
+              anchorSheet.getRange(37,6).setValue(valuestring.replace(/\D/g,''));
+              anchorSheet.getRange(37,7).setValue(sheetList[4].getRange(subindex+1, 1).getValue());
+              signal = 1;
+              break;
+              }
+          }
+          if (signal == 1) { break; }  
+        }
+    }
+
+    //Tech Obstacles - Current Q Open Requests
+    for (var i=1; i <= sheetList[4].getLastRow(); i++) {
+        var signal = 0;
+        if(sheetList[4].getRange(i, 1).getValue().toString().indexOf("Tech Obstacles - Current Q Open Requests") >=0 ) {
+          for (var subindex=i+1; subindex <= sheetList[4].getLastRow(); subindex++) {
+            if(sheetList[4].getRange(subindex, 1).getValue().toString().indexOf("Grand Total") >=0 ) {
+              var valuestring = sheetList[4].getRange(subindex, 1).getValue()
+              anchorSheet.getRange(36,6).setValue(valuestring.replace(/\D/g,''));
+              anchorSheet.getRange(36,7).setValue(sheetList[4].getRange(subindex+1, 1).getValue());
+              signal = 1;
+              break;
+              }
+          }
+          if (signal == 1) { break; }  
+        }
+    }
+
+
+    //Tech Obstacles - Current Q Deal Breakers
+    for (var i=1; i <= sheetList[4].getLastRow(); i++) {
+        var signal = 0;
+        if(sheetList[4].getRange(i, 1).getValue().toString().indexOf("Tech Obstacles - Current Q Deal Breakers") >=0 ) {
+          for (var subindex=i+1; subindex <= sheetList[4].getLastRow(); subindex++) {
+            if(sheetList[4].getRange(subindex, 1).getValue().toString().indexOf("Grand Total") >=0 ) {
+              var valuestring = sheetList[4].getRange(subindex, 1).getValue()
+              anchorSheet.getRange(35,6).setValue(valuestring.replace(/\D/g,''));
+              anchorSheet.getRange(35,7).setValue(sheetList[4].getRange(subindex+1, 1).getValue());
+              signal = 1;
+              break;
+              }
+          }
+          if (signal == 1) { break; }  
+        }
+    }
+
+    //Tech Obstacles - Added This Week
+    for (var i=1; i <= sheetList[4].getLastRow(); i++) {
+        var signal = 0;
+        if(sheetList[4].getRange(i, 1).getValue().toString().indexOf("Tech Obstacles - Added This Week") >=0 ) {
+          for (var subindex=i+1; subindex <= sheetList[4].getLastRow(); subindex++) {
+            if(sheetList[4].getRange(subindex, 1).getValue().toString().indexOf("Grand Total") >=0 ) {
+              var valuestring = sheetList[4].getRange(subindex, 1).getValue()
+              anchorSheet.getRange(34,6).setValue(valuestring.replace(/\D/g,''));
+              anchorSheet.getRange(34,7).setValue(sheetList[4].getRange(subindex+1, 1).getValue());
+              signal = 1;
+              break;
+              }
+          }
+          if (signal == 1) { break; }  
+        }
+    }
+    
+
+    //myString = myString.replace(/\D/g,'');
+    //myString = myString.replace(/[^\d]/g, '');
+    
+    
     //finish with the comments
     var newComments = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Comments").getRange(1,1,8).getValues();
     var anchorComments = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Anchor").getRange(40,2,8);
@@ -435,17 +604,16 @@ function sanityCheck() {
 
   function postToMaster() {
    //this is where we are taking the well prepared values and putting them into the master report
-   initializeConfigs();
-   checkMasterReport();
-   var x,y;
+   var x = 0;
+   var y = 0;
    var masterReport = DriveApp.getFileById(masterReportLocation);
    //open as a spreadsheet and grab the latest report sheet
    var reportSheet = SpreadsheetApp.open(masterReport);
   
    currentSheet = reportSheet.getSheetByName(masterCurrentSheetName);
    //find my anchor point in the master report
-   var bigRange = currentSheet.getRange(1,3,100,2).getValues();
-    for (var i=0; i<100; i++) {
+   var bigRange = currentSheet.getRange(1,3,150,2).getValues();
+    for (var i=0; i<150; i++) {
       for(var a=0; a<2; a++) {
         if(bigRange[i][a].indexOf("POC Activity for active Opportunities") >= 0){
           x=i+1;
@@ -466,7 +634,7 @@ function sanityCheck() {
     var anchorSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Anchor");
 
     //poc data
-    var masterPocRange = currentSheet.getRange(x,y+2, 5, 2);
+    var masterPocRange = currentSheet.getRange(x+0,y+2, 5, 2);
     var anchorPocRange = anchorSheet.getRange(5,4,5,2).getValues();
     masterPocRange.setValues(anchorPocRange);
     
@@ -476,17 +644,17 @@ function sanityCheck() {
     masterWeekActions.setValues(anchorWeekActions);
     
     //quarter actions
-    var masterQuarterActions = currentSheet.getRange(x+12, y+2, 8,2);
-    var anchorQuarterActions = anchorSheet.getRange(17,4,8,2).getValues();
+    var masterQuarterActions = currentSheet.getRange(x+12, y+2, 9,2);
+    var anchorQuarterActions = anchorSheet.getRange(17,4,9,2).getValues();
     masterQuarterActions.setValues(anchorQuarterActions);
     
     //onboarding actions
-    var masterOnboarding = currentSheet.getRange(x+28, y+1, 4);
-    var anchorOnboarding = anchorSheet.getRange(32,3,4).getValues();
+    var masterOnboarding = currentSheet.getRange(x+29, y+1, 5);
+    var anchorOnboarding = anchorSheet.getRange(33,3,5).getValues();
     masterOnboarding.setValues(anchorOnboarding);
     
     //comments - max of 8
-    var masterComments = currentSheet.getRange(x+36, y, 8);
+    var masterComments = currentSheet.getRange(x+37, y, 8);
     var anchorComments = anchorSheet.getRange(40,2,8).getValues();
     masterComments.setValues(anchorComments);
     
@@ -495,6 +663,10 @@ function sanityCheck() {
          
          
   function prepForNextTime() {
+
+    //send me a message letting me know how things went
+    copyForMail();
+
     //this is run after all the processing is complete and cleans things up so the next run is current
     //archive the tab
     var anchorSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Anchor");
@@ -506,8 +678,8 @@ function sanityCheck() {
     anchorSheet.getRange(5,5,5).setValue(0);
     anchorSheet.getRange(12,4,2).setValue(0);
     anchorSheet.getRange(12,5,2).setValue(0);
-    anchorSheet.getRange(17,4,8).setValue(0);
-    anchorSheet.getRange(17,5,8).setValue(0);
+    anchorSheet.getRange(17,4,9).setValue(0);
+    anchorSheet.getRange(17,5,9).setValue(0);
     anchorSheet.getRange(32,3,4).setValue(0);
 
     //delete content from the staging pages, do this so that I avoid duplicating numbers
@@ -516,12 +688,13 @@ function sanityCheck() {
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("TotalQtr").deleteRows(1, 50);
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("POCData").deleteRows(1, 50);
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Comments").deleteRows(1, 50);
-    SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(3,3,4).setValue(0);
     
     //update the Master sheet so we know that we processed this week (and don't dup work if Master report hasn't updated his sheet)
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Master').getRange("B6").setValue(masterCurrentSheetName);
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Master").getRange(11,2).setValue(SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(4,3).getValue());
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Master").getRange(12,2).setValue(SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(6,3).getValue());
+
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Onboarding").getRange(3,3,4).setValue(0);
 
     //remove the sfdcreport label from the emails from my mail box
     var label = GmailApp.getUserLabelByName("SfdcReport");
@@ -534,16 +707,13 @@ function sanityCheck() {
     //update the master records on last run time
     SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Master").getRange(4,2).setValue(new Date());
 
-    
-    //send me a message letting me know how things went
-    copyForMail();
-    
+       
   }
 
 function copyForMail() {
   //we only get here because we've already checked that everything is super awesome
   var subject = "Reporting completed successfully";
-  var destination = "emailaddress.com";
+  var destination = "gabe@redislabs.com";
   var message = "Weekly reporting has completed without errors.";
 
   var anchorSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Anchor");
@@ -580,7 +750,7 @@ function copyForMail() {
     if(newWeekSheetReady != true){
       //email me and let me know this broke
       var subject = "Reporting failed - no new sheet ready";
-      var destination = "emailaddress.com";
+      var destination = "gabe@redislabs.com";
       var message = "Weekly reporting failed because we did not find a new sheet ready in the Master report.";
       MailApp.sendEmail(destination, subject, message);
       return;
@@ -598,7 +768,7 @@ function copyForMail() {
     //if something is wrong, back out now and let me know
     if(SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Master").getRange(8,2).getValue() === true){
       var subject = "Reporting failed - error in processing";
-      var destination = "emailaddress.com";
+      var destination = "gabe@redislabs.com";
       var message = "Weekly reporting failed due to a processing error.";
       MailApp.sendEmail(destination, subject, message);
       
@@ -611,7 +781,7 @@ function copyForMail() {
     
     if(SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Master").getRange(8,2).getValue() === true){
       var subject = "Reporting failed - error while posting to master";
-      var destination = "emailaddress.com";
+      var destination = "gabe@redislabs.com";
       var message = "Weekly reporting failed while posting to the master report";
       MailApp.sendEmail(destination, subject, message);
       
@@ -625,4 +795,3 @@ function copyForMail() {
     
     
 }
-
